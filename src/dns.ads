@@ -9,7 +9,7 @@ package DNS is
    type Header is
         record
             Id      : Unsigned_16;
-            Qr      : Unsigned_1;
+            Qr      : Query_Response;
             Opcode  : Unsigned_4;
             Aa      : Unsigned_1;
             Tc      : Unsigned_1;
@@ -25,7 +25,9 @@ package DNS is
 
    --  Bitfield layout in 12 bytes (96 bits)
    for Header'Size use 12 * System.Storage_Unit;
-   -- for Header'Alignment use System.Storage_Unit;
+
+   -- byte align
+   for Header'Alignment use 1;
 
    for Header use
         record
@@ -46,14 +48,19 @@ package DNS is
 
    type Question is
        record
-           null;
+           -- TODO
+           Hdr : Header;
        end record;
 
    type Answer is
        record
-           null;
+           -- TODO
+           Hdr : Header;
        end record;
 
-   function Query (Domain : String) return String;
+   function Resolve (Domain : String) return String;
+
+private
+    Last_Id : Unsigned_16 := 0;
 
 end DNS;
