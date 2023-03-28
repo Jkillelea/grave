@@ -9,24 +9,24 @@ package DNS is
    type Header is
         record
             Id      : Unsigned_16;
-            Qr      : Query_Response;
-            Opcode  : Unsigned_4;
-            Aa      : Unsigned_1;
-            Tc      : Unsigned_1;
-            Rd      : Unsigned_1;
-            Ra      : Unsigned_1;
-            Z       : Unsigned_3;
-            Rcode   : Unsigned_4;
-            QdCount : Unsigned_16;
-            AnCount : Unsigned_16;
-            NsCount : Unsigned_16;
-            ArCount : Unsigned_16;
+            Qr      : Query_Response; -- query or response
+            Opcode  : Unsigned_4; -- usually zero
+            Aa      : Unsigned_1; -- authoritative
+            Tc      : Unsigned_1; -- truncated
+            Rd      : Unsigned_1; -- recursion desired
+            Ra      : Unsigned_1; -- recursion available
+            Z       : Unsigned_3; -- reserved
+            Rcode   : Unsigned_4; -- response code
+            QdCount : Unsigned_16; -- question count
+            AnCount : Unsigned_16; -- answer count
+            NsCount : Unsigned_16; -- authority count
+            ArCount : Unsigned_16; -- additional count
         end record;
 
    --  Bitfield layout in 12 bytes (96 bits)
    for Header'Size use 12 * System.Storage_Unit;
 
-   -- byte align
+   --  byte align
    for Header'Alignment use 1;
 
    for Header use
@@ -48,8 +48,9 @@ package DNS is
 
    type Question is
        record
-           -- TODO
-           Hdr : Header;
+           Hdr   : Header;
+           Rtype : Unsigned_16;
+           Class : Unsigned_16;
        end record;
 
    type Answer is
@@ -61,6 +62,6 @@ package DNS is
    function Resolve (Domain : String) return String;
 
 private
-    Last_Id : Unsigned_16 := 0;
+   Last_Id : Unsigned_16 := 0;
 
 end DNS;

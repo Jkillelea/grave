@@ -2,9 +2,9 @@ with Ada.Text_IO;
 
 package body DNS is
    function Resolve (Domain : String) return String is
-       Request : Question := (
-           Hdr =>
-               (Id => Last_Id,
+      Request : Question := (
+           Hdr => (
+               Id => Last_Id,
                Qr => Q,
                Opcode => 0,
                Aa => 0,
@@ -16,11 +16,15 @@ package body DNS is
                QdCount => 1, -- Question
                AnCount => 0,
                NsCount => 0,
-               ArCount => 0)
-           );
+               ArCount => 0
+               ),
+
+           Rtype => 0,
+           Class => 0
+       );
    begin
       Last_Id := Last_Id + 1;
-      Ada.Text_IO.Put_Line ("Requested: " & Domain);
+      Ada.Text_IO.Put_Line ("Request" & Request.Hdr.Id'Img & ": " & Domain);
       delay 1.0;
       return Domain;
    end Resolve;
