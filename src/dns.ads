@@ -1,4 +1,5 @@
 with System;
+with GNAT.Sockets;
 with Interfaces.C.Extensions; use Interfaces.C.Extensions;
 
 package DNS is
@@ -63,5 +64,7 @@ package DNS is
 
 private
    Last_Id : Unsigned_16 := 0;
+
+   -- Server_Address : GNAT.Sockets.Inet_Addr_Type := (Family_Inet, Sin_V4 : Inet_Addr_V4_Type)
 
 end DNS;

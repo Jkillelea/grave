@@ -1,5 +1,4 @@
 with Ada.Text_IO;
-
 package body DNS is
    function Resolve (Domain : String) return String is
       Request : Question := (
