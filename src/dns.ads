@@ -1,16 +1,36 @@
 with System;
-with GNAT.Sockets;
 with Interfaces.C.Extensions; use Interfaces.C.Extensions;
 
 package DNS is
-   type Query_Response is (Q, R);
-   for Query_Response use (Q => 0, R => 1);
-   for Query_Response'Size use 1; -- bit
 
-   type Header is
+   --  type IP_Address_Variant is (V4, V6);
+   --  type IP_Address_Bytes is array (Positive range <>) of Unsigned_1;
+   --  type IP_Address (Variant : IP_Address_Variant) is record
+   --      case Variant is
+   --      when V4 =>
+   --          V4_Bytes : IP_Address_Bytes (1 .. 4);
+   --      when V6 =>
+   --          V6_Bytes : IP_Address_Bytes (1 .. 32);
+   --      end case;
+   --  end record;
+
+   type Query_Type is (Query, Response);
+   for Query_Type use (Query => 0, Response => 1);
+   for Query_Type'Size use 1; -- bit
+
+   type Resolver is record
+      Id : Integer;
+      Flags : Integer;
+      Num_Questions : Integer := 0;
+      Num_Answers : Integer := 0;
+      Num_Authorities : Integer := 0;
+      Num_Additionals : Integer := 0;
+   end record;
+
+   type Header_Type is
         record
             Id      : Unsigned_16;
-            Qr      : Query_Response; -- query or response
+            Qr      : Query_Type; -- query or response
             Opcode  : Unsigned_4; -- usually zero
             Aa      : Unsigned_1; -- authoritative
             Tc      : Unsigned_1; -- truncated
@@ -25,12 +45,12 @@ package DNS is
         end record;
 
    --  Bitfield layout in 12 bytes (96 bits)
-   for Header'Size use 12 * System.Storage_Unit;
+   for Header_Type'Size use 12 * System.Storage_Unit;
 
    --  byte align
-   for Header'Alignment use 1;
+   for Header_Type'Alignment use 1;
 
-   for Header use
+   for Header_Type use
         record
             Id      at 0 range  0 .. 15;
             Qr      at 0 range 16 .. 16;
@@ -47,17 +67,49 @@ package DNS is
             ArCount at 0 range 80 .. 95;
         end record;
 
-   type Question is
+   type Question_Type (Name_Len : Positive) is
        record
-           Hdr   : Header;
-           Rtype : Unsigned_16;
-           Class : Unsigned_16;
+           Qname : String (1 .. Name_Len); -- The domain name
+           Qtype : Unsigned_16; -- The type of the query (PTR or A, etc.)
+           Qclass : Unsigned_16; -- The class of the query (IN, etc.)
        end record;
 
-   type Answer is
+   --  The request that we send, with a question, to the DNS server
+   --  TODO: Name_Len is a discriminant for the buffer size and not part of the struct! How do we make it
+   --  not be represented in the struct's data values?
+   type Request_Type (Name_Len : Positive) is
        record
-           -- TODO
-           Hdr : Header;
+           Hdr   : Header_Type;
+           Rtype : Unsigned_16;
+           Class : Unsigned_16;
+           Question : Question_Type (Name_Len);
+       end record;
+
+   --  The response we expect back
+   type Response_Type (Name_Len : Positive) is
+       record
+           Hdr : Header_Type;
+
+           --  Is this an overflow risk? We don't know the length of the response domain name before we get it.
+           --  We may need to parse this section on the fly.
+           Question : Question_Type (Name_Len);
+           -- Answer : Answer_Type;
+       end record;
+
+   type Preamble_Type is
+       record
+           -- Name  : Label_Sequence; --  TODO
+           Rtype : Unsigned_16;
+           Class : Unsigned_16;
+           TTL   : Unsigned_32;
+           Len   : Unsigned_16;
+       end record;
+
+   --  Authoritative ("A") Record response
+   type A_Record is
+       record
+           Preamble : Preamble_Type;
+           IP : Unsigned_32;
        end record;
 
    function Resolve (Domain : String) return String;
@@ -65,6 +117,10 @@ package DNS is
 private
    Last_Id : Unsigned_16 := 0;
 
-   -- Server_Address : GNAT.Sockets.Inet_Addr_Type := (Family_Inet, Sin_V4 : Inet_Addr_V4_Type)
+   --  If the first two bits of the length field at set,
+   --  we can expect a following byte (extended len)
+   Extended_Len_Mask : Unsigned_16 := 16#C000#;
+
+   --  Server_Address : GNAT.Sockets.Inet_Addr_Type := (Family_Inet, Sin_V4 : Inet_Addr_V4_Type)
 
 end DNS;
