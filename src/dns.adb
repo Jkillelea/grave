@@ -32,30 +32,30 @@ package body DNS is
 
       Idx : Stream_Element_Offset := 1;
    begin
+
       --  Pack header
       for Byte of Header_Bytes loop
          Result.Buffer (Idx) := Byte;
          Idx := Idx + 1;
       end loop;
 
-      -- Pack Rtype
+      --  Pack Rtype
       for Byte of Rtype_Bytes loop
          Result.Buffer (Idx) := Byte;
          Idx := Idx + 1;
       end loop;
 
-      -- Pack Class
+      --  Pack Class
       for Byte of Class_Bytes loop
          Result.Buffer (Idx) := Byte;
          Idx := Idx + 1;
       end loop;
 
-      -- Pack Question Name
+      --  Pack Question Name
       for C of Request.Question.Qname loop
          Result.Buffer (Idx) := Stream_Element (Character'Pos (C));
          Idx := Idx + 1;
       end loop;
-
 
       return Result;
    end Pack_Request;
