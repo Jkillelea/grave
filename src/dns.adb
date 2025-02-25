@@ -22,12 +22,11 @@ package body DNS is
       Header_Bytes : Header_Bytes_Type;
       for Header_Bytes'Address use Request.Hdr'Address;
 
-      type Rtype_Bytes_Type is array (1 .. 2) of Stream_Element;
-      Rtype_Bytes : Rtype_Bytes_Type;
+      type U16_Byte_Type is array (1 .. 2) of Stream_Element;
+      Rtype_Bytes : U16_Byte_Type;
       for Rtype_Bytes'Address use Request.Rtype'Address;
 
-      type Class_Bytes_Type is array (1 .. 2) of Stream_Element;
-      Class_Bytes : Class_Bytes_Type;
+      Class_Bytes : U16_Byte_Type;
       for Class_Bytes'Address use Request.Class'Address;
 
       Idx : Stream_Element_Offset := 1;
