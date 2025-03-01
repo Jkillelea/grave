@@ -40,6 +40,7 @@ package body DNS is
    begin
 
       --  Pack header
+      --  Header_Type'Write (Result.Buffer'Access, Request.Hdr);
       for Byte of Header_Bytes loop
          Result.Buffer (Idx) := Byte;
          Idx := Idx + 1;
@@ -97,12 +98,9 @@ package body DNS is
                )
        );
 
-      --  --  Stream the Question packet: requires us to create stream buffer, which is best done with a subtype
-      --  --  that is an array of Stream_Element. We then use the 'Address attribute to get the address of
-      --  --  Question, and use that to set the address of the subtype.
-      --  subtype Request_Buffer_Type is Stream_Element_Array (1 .. Request'Size / Stream_Element'Size);
-      --  Request_Buffer : Request_Buffer_Type;
-      --  for Request_Buffer'Address use Request'Address;
+      --  Stream the Question packet: requires us to create stream buffer, which is best done with a subtype
+      --  that is an array of Stream_Element. We then use the 'Address attribute to get the address of
+      --  Question, and use that to set the address of the subtype.
       Request_Length : Stream_Element_Offset := Request'Size;
       Request_Buffer : Packet_Buffer := Pack_Request (Request);
 
