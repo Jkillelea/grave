@@ -4,16 +4,23 @@ with Ada.Streams; use Ada.Streams;
 
 package body DNS is
 
-   Server_Address : constant Sock_Addr_Type :=
-        (Family => Family_Inet,
-        Addr => Inet_Addr ("8.8.8.8"),
-        Port => 53);
+   type DNS_Providers is (Google, Cloudflare);
 
-   type Packet_Buffer (Size : Stream_Element_Offset) is
+   Server_Addresses : array (DNS_Providers) of Sock_Addr_Type := (
+       Google => (Family => Family_Inet,
+                  Addr => Inet_Addr ("8.8.8.8"),
+                  Port => 53),
+       Cloudflare => (Family => Family_Inet,
+                      Addr => Inet_Addr ("1.1.1.1"),
+                      Port => 53)
+                  );
+
+   type Packet_Buffer (Size : Stream_Element_Offset) is -- new Ada.Streams.Root_Stream_Type with
        record
-           Buffer : Stream_Element_Array (1 .. Size) := (others => 0);
+           Buffer : aliased Stream_Element_Array (1 .. Size) := (others => 0);
        end record;
 
+   --  Pack the bytes of the request record into a buffer.
    function Pack_Request (Request : Request_Type) return Packet_Buffer is
       Result : Packet_Buffer (Request'Size / Stream_Element'Size);
 
@@ -107,6 +114,8 @@ package body DNS is
       Response_Buffer : Response_Buffer_Type;
       for Response_Buffer'Address use Response'Address;
 
+      DNS_Provider : Sock_Addr_Type := Server_Addresses (Google);
+
    begin
       Last_Id := Last_Id + 1;
 
@@ -119,7 +128,7 @@ package body DNS is
 
       Create_Socket (Socket, Family_Inet, Socket_Datagram);
 
-      GNAT.Sockets.Send_Socket (Socket, Request_Buffer.Buffer, Request_Length, Server_Address);
+      GNAT.Sockets.Send_Socket (Socket, Request_Buffer.Buffer, Request_Length, DNS_Provider);
       Ada.Text_IO.Put_Line ("Sent: " & Request_Length'Img & " bytes");
       Ada.Text_IO.Put_Line ("Question" & Request'Img);
       for I in 1 .. Request_Length loop
