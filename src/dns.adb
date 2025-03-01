@@ -6,7 +6,7 @@ package body DNS is
 
    type DNS_Providers is (Google, Cloudflare);
 
-   Server_Addresses : array (DNS_Providers) of Sock_Addr_Type := (
+   Server_Addresses : constant array (DNS_Providers) of Sock_Addr_Type := (
        Google => (Family => Family_Inet,
                   Addr => Inet_Addr ("8.8.8.8"),
                   Port => 53),
@@ -22,18 +22,18 @@ package body DNS is
 
    --  Pack the bytes of the request record into a buffer.
    function Pack_Request (Request : Request_Type) return Packet_Buffer is
-      Result : Packet_Buffer (Request'Size / Stream_Element'Size);
-
       type Byte_Array_Type is array (Stream_Element_Offset range <>) of Stream_Element;
+
+      Result : Packet_Buffer (Request'Size / Stream_Element'Size);
 
       --  Encode the different fields as byte arrays
       Header_Bytes : Byte_Array_Type (1 .. Header_Type'Size / Stream_Element'Size);
       for Header_Bytes'Address use Request.Hdr'Address;
 
-      Rtype_Bytes : Byte_Array_Type (1 .. Rtype_Bytes'Size / Stream_Element'Size);
+      Rtype_Bytes : Byte_Array_Type (1 .. Request.Rtype'Size / Stream_Element'Size);
       for Rtype_Bytes'Address use Request.Rtype'Address;
 
-      Class_Bytes : Byte_Array_Type (1 .. Class_Bytes'Size / Stream_Element'Size);
+      Class_Bytes : Byte_Array_Type (1 .. Request.Class'Size / Stream_Element'Size);
       for Class_Bytes'Address use Request.Class'Address;
 
       Idx : Stream_Element_Offset := 1;
@@ -102,7 +102,7 @@ package body DNS is
       --  that is an array of Stream_Element. We then use the 'Address attribute to get the address of
       --  Question, and use that to set the address of the subtype.
       Request_Length : Stream_Element_Offset := Request'Size;
-      Request_Buffer : Packet_Buffer := Pack_Request (Request);
+      Request_Buffer : constant Packet_Buffer := Pack_Request (Request);
 
       --  Answer result
       Response : Response_Type := (Name_Len => Domain'Length, others => <>);
@@ -112,7 +112,7 @@ package body DNS is
       Response_Buffer : Response_Buffer_Type;
       for Response_Buffer'Address use Response'Address;
 
-      DNS_Provider : Sock_Addr_Type := Server_Addresses (Google);
+      DNS_Provider : constant Sock_Addr_Type := Server_Addresses (Google);
 
    begin
       Last_Id := Last_Id + 1;
