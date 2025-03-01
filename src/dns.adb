@@ -24,16 +24,16 @@ package body DNS is
    function Pack_Request (Request : Request_Type) return Packet_Buffer is
       Result : Packet_Buffer (Request'Size / Stream_Element'Size);
 
+      type Byte_Array_Type is array (Stream_Element_Offset range <>) of Stream_Element;
+
       --  Encode the different fields as byte arrays
-      type Header_Bytes_Type is array (1 .. Header_Type'Size / Stream_Element'Size) of Stream_Element;
-      Header_Bytes : Header_Bytes_Type;
+      Header_Bytes : Byte_Array_Type (1 .. Header_Type'Size / Stream_Element'Size);
       for Header_Bytes'Address use Request.Hdr'Address;
 
-      type U16_Byte_Type is array (1 .. 2) of Stream_Element;
-      Rtype_Bytes : U16_Byte_Type;
+      Rtype_Bytes : Byte_Array_Type (1 .. Rtype_Bytes'Size / Stream_Element'Size);
       for Rtype_Bytes'Address use Request.Rtype'Address;
 
-      Class_Bytes : U16_Byte_Type;
+      Class_Bytes : Byte_Array_Type (1 .. Class_Bytes'Size / Stream_Element'Size);
       for Class_Bytes'Address use Request.Class'Address;
 
       Idx : Stream_Element_Offset := 1;
