@@ -1,7 +1,7 @@
 --  with GNAT.Sockets;
 with Ada.Text_IO;
 with Ada.Command_Line;
-with DNS;
+with DNS; use DNS;
 
 procedure Grave is
    Response : DNS.DNS_Response;
@@ -12,7 +12,7 @@ begin
       begin
          DNS.Logging_Level := DNS.Debug;
          DNS.Resolve (Domain, Response);
-         if Response.Status = 0 then
+         if Response.Status = DNS.Response_Ok then
             for J in DNS.IP_Count range 1 .. Response.Count loop
                Ada.Text_IO.Put_Line ("  " & Response.IPs (J));
             end loop;

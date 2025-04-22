@@ -16,10 +16,17 @@ package DNS is
    subtype IP_Count is Natural range 0 .. Max_IPs;
    type IP_Array is array (1 .. Max_IPs) of String (1 .. 15);
 
+   type Response_Status is (Response_Ok, Response_Error);
+   --  Integer mapping
+   for Response_Status use (
+       Response_Ok => 0,
+       Response_Error => 1
+   );
+
    type DNS_Response is record
       IPs     : IP_Array;
       Count   : IP_Count;
-      Status  : Natural;
+      Status  : Response_Status;
    end record;
 
    --  DNS Request type

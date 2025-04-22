@@ -129,11 +129,11 @@ package body DNS is
 
       --  Initialize response
       Response.Count := 0;
-      Response.Status := 0;
+      Response.Status := Response_Ok;
 
       --  Check response size
       if Buffer'Length < 12 then
-         Response.Status := 1;
+         Response.Status := Response_Error;
          Error ("Response too short");
          return;
       end if;
@@ -144,7 +144,7 @@ package body DNS is
          Rcode : constant Stream_Element := Flags and 16#0F#;
       begin
          if Rcode /= 0 then
-            Response.Status := 1;
+            Response.Status := Response_Error;
             Error ("DNS response code:" & Rcode'Image);
             return;
          end if;
@@ -156,7 +156,7 @@ package body DNS is
       begin
          Debug ("Number of answers:" & AnCount'Image);
          if AnCount = 0 then
-            Response.Status := 1;
+            Response.Status := Response_Error;
             Error ("No answers in response");
             return;
          end if;
@@ -223,7 +223,7 @@ package body DNS is
       end loop;
 
       if Response.Count = 0 then
-         Response.Status := 1;
+         Response.Status := Response_Error;
          Error ("Could not parse any answers");
       end if;
    end Parse_Response;
@@ -280,7 +280,7 @@ package body DNS is
       end loop;
 
       Close_Socket (Socket);
-      Result.Status := 1;  --  Error
+      Result.Status := Response_Error;
       Result.Count := 0;
       Error ("DNS request failed");
    end Resolve;
@@ -290,7 +290,7 @@ package body DNS is
       Response : DNS_Response;
    begin
       Resolve (Domain, Response);
-      if Response.Status = 0 and then Response.Count > 0 then
+      if Response.Status = Response_Ok and then Response.Count > 0 then
          return Response.IPs (1);
       else
          return "Error resolving domain";
