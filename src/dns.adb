@@ -1,153 +1,278 @@
 with Ada.Text_IO;
+with Ada.Calendar; use Ada.Calendar;
 with GNAT.Sockets; use GNAT.Sockets;
 with Ada.Streams; use Ada.Streams;
+with Ada.Exceptions; use Ada.Exceptions;
 
 package body DNS is
-
    type DNS_Providers is (Google, Cloudflare);
 
-   Server_Addresses : constant array (DNS_Providers) of Sock_Addr_Type := (
+   Server_Addresses : constant array (DNS_Providers) of Sock_Addr_Type := [
        Google => (Family => Family_Inet,
                   Addr => Inet_Addr ("8.8.8.8"),
                   Port => 53),
        Cloudflare => (Family => Family_Inet,
                       Addr => Inet_Addr ("1.1.1.1"),
                       Port => 53)
-                  );
+                  ];
 
-   type Packet_Buffer (Size : Stream_Element_Offset) is -- new Ada.Streams.Root_Stream_Type with
-       record
-           Buffer : aliased Stream_Element_Array (1 .. Size) := (others => 0);
-       end record;
-
-   --  Pack the bytes of the request record into a buffer.
-   function Pack_Request (Request : Request_Type) return Packet_Buffer is
-      type Byte_Array_Type is array (Stream_Element_Offset range <>) of Stream_Element;
-
-      Result : Packet_Buffer (Request'Size / Stream_Element'Size);
-
-      --  Encode the different fields as byte arrays
-      Header_Bytes : Byte_Array_Type (1 .. Header_Type'Size / Stream_Element'Size);
-      for Header_Bytes'Address use Request.Hdr'Address;
-
-      Rtype_Bytes : Byte_Array_Type (1 .. Request.Rtype'Size / Stream_Element'Size);
-      for Rtype_Bytes'Address use Request.Rtype'Address;
-
-      Class_Bytes : Byte_Array_Type (1 .. Request.Class'Size / Stream_Element'Size);
-      for Class_Bytes'Address use Request.Class'Address;
-
-      Idx : Stream_Element_Offset := 1;
+   -- Create a DNS request
+   procedure Create_Request (Domain : String; Request : out DNS_Request) is
+      Query_Id : constant Unsigned_16 := 1;
    begin
+      Ada.Text_IO.Put_Line ("Creating DNS request for domain: " & Domain);
+      
+      -- Set up the DNS header
+      Request.Buffer (1) := Stream_Element (Query_Id / 256);
+      Request.Buffer (2) := Stream_Element (Query_Id mod 256);
+      Request.Buffer (3) := 16#01#;  -- Standard query
+      Request.Buffer (4) := 16#01#;  -- Recursion desired
+      Request.Buffer (5) := 0;  -- QDCOUNT high byte
+      Request.Buffer (6) := 1;  -- QDCOUNT low byte (1 question)
+      Request.Buffer (7 .. 12) := [0, 0, 0, 0, 0, 0];  -- ANCOUNT, NSCOUNT, ARCOUNT
 
-      --  Pack header
-      --  Header_Type'Write (Result.Buffer'Access, Request.Hdr);
-      for Byte of Header_Bytes loop
-         Result.Buffer (Idx) := Byte;
-         Idx := Idx + 1;
-      end loop;
+      -- Convert domain name to DNS format
+      declare
+         Pos : Stream_Element_Offset := 13;
+         Start : Positive := Domain'First;
+         Dot_Pos : Natural;
+      begin
+         loop
+            Dot_Pos := Start;
+            while Dot_Pos <= Domain'Last and then Domain (Dot_Pos) /= '.' loop
+               Dot_Pos := Dot_Pos + 1;
+            end loop;
 
-      --  Pack Rtype
-      for Byte of Rtype_Bytes loop
-         Result.Buffer (Idx) := Byte;
-         Idx := Idx + 1;
-      end loop;
+            -- Write length of label
+            Request.Buffer (Pos) := Stream_Element (Dot_Pos - Start);
+            Pos := Pos + 1;
 
-      --  Pack Class
-      for Byte of Class_Bytes loop
-         Result.Buffer (Idx) := Byte;
-         Idx := Idx + 1;
-      end loop;
+            -- Write label
+            for I in Start .. Dot_Pos - 1 loop
+               Request.Buffer (Pos) := Stream_Element'Val (Character'Pos (Domain (I)));
+               Pos := Pos + 1;
+            end loop;
 
-      --  Pack Question Name
-      for C of Request.Question.Qname loop
-         Result.Buffer (Idx) := Stream_Element (Character'Pos (C));
-         Idx := Idx + 1;
-      end loop;
+            exit when Dot_Pos > Domain'Last;
+            Start := Dot_Pos + 1;
+         end loop;
 
-      return Result;
-   end Pack_Request;
+         -- Terminating zero
+         Request.Buffer (Pos) := 0;
+         Pos := Pos + 1;
 
-   function Resolve (Domain : String) return String is
-      Socket : GNAT.Sockets.Socket_Type;
-      Receive_Addr : Sock_Addr_Type;
+         -- Type A
+         Request.Buffer (Pos) := 0;
+         Request.Buffer (Pos + 1) := 1;
 
-      Request : Request_Type := (
-           Name_Len => Domain'Length,
-           Hdr => (
-               Id => Last_Id,
-               Qr => Query,
-               Opcode => 0,
-               Aa => 0,
-               Tc => 0,
-               Rd => 0,
-               Ra => 0,
-               Z => 0,
-               Rcode => 0,
-               QdCount => 1,
-               AnCount => 0,
-               NsCount => 0,
-               ArCount => 0
-               ),
-           Rtype => 0,
-           Class => 0,
-           Question => (
-               Name_Len => Domain'Length,
-               Qname => Domain,
-               Qtype => 1, -- A
-               Qclass => 1 -- IN
-               )
-       );
+         -- Class IN
+         Request.Buffer (Pos + 2) := 0;
+         Request.Buffer (Pos + 3) := 1;
 
-      --  Stream the Question packet: requires us to create stream buffer, which is best done with a subtype
-      --  that is an array of Stream_Element. We then use the 'Address attribute to get the address of
-      --  Question, and use that to set the address of the subtype.
-      Request_Length : Stream_Element_Offset := Request'Size;
-      Request_Buffer : constant Packet_Buffer := Pack_Request (Request);
+         Request.Size := Pos + 3;
+         Ada.Text_IO.Put_Line ("Request size:" & Request.Size'Image & " bytes");
+      end;
+   end Create_Request;
 
-      --  Answer result
-      Response : Response_Type := (Name_Len => Domain'Length, others => <>);
-      subtype Response_Buffer_Type is Stream_Element_Array (1 .. Response'Size / Stream_Element'Size);
-      --  subtype Response_Buffer_Type is Stream_Element_Array (1 .. 512);
-      Response_Length : Stream_Element_Offset := 0;
-      Response_Buffer : Response_Buffer_Type;
-      for Response_Buffer'Address use Response'Address;
-
-      DNS_Provider : constant Sock_Addr_Type := Server_Addresses (Google);
-
+   -- Skip a domain name in DNS message format
+   function Skip_Name (Buffer : Stream_Element_Array; Start : Stream_Element_Offset) return Stream_Element_Offset is
+      Pos : Stream_Element_Offset := Start;
    begin
-      Last_Id := Last_Id + 1;
+      loop
+         exit when Pos > Buffer'Last;
+         
+         declare
+            Length : Stream_Element := Buffer (Pos);
+         begin
+            exit when Length = 0;
+            
+            -- Check for compression pointer
+            if (Length and 16#C0#) = 16#C0# then
+               return Pos + 2;  -- Skip the 2-byte pointer
+            end if;
+            
+            -- Skip label
+            Pos := Pos + Stream_Element_Offset (Length) + 1;
+         end;
+      end loop;
+      return Pos + 1;  -- Skip the terminating zero
+   end Skip_Name;
 
-      --  Check if the request is too large. If it is, set the Truncated bit. For now, also raise an exception since we
-      --  don't support requests that large.
-      if Request'Size > 512 * System.Storage_Unit then
-         Request.Hdr.Tc := 1;
-         raise Program_Error with "Request too large";
+   -- Parse a DNS response
+   procedure Parse_Response (Buffer : Stream_Element_Array; Response : out DNS_Response) is
+      Pos : Stream_Element_Offset := 1;
+      Current_Count : Natural := 0;
+   begin
+      Ada.Text_IO.Put_Line ("Parsing DNS response of" & Buffer'Length'Image & " bytes");
+      
+      -- Initialize response
+      Response.Count := 0;
+      Response.Status := 0;
+      
+      -- Check response size
+      if Buffer'Length < 12 then
+         Response.Status := 1;
+         Ada.Text_IO.Put_Line ("Error: Response too short");
+         return;
       end if;
 
+      -- Check response flags
+      declare
+         Flags : constant Stream_Element := Buffer (4);
+         Rcode : constant Stream_Element := Flags and 16#0F#;
+      begin
+         if Rcode /= 0 then
+            Response.Status := 1;
+            Ada.Text_IO.Put_Line ("Error: DNS response code:" & Rcode'Image);
+            return;
+         end if;
+      end;
+
+      -- Get answer count
+      declare
+         AnCount : constant Natural := Natural (Buffer (7)) * 256 + Natural (Buffer (8));
+      begin
+         Ada.Text_IO.Put_Line ("Number of answers:" & AnCount'Image);
+         if AnCount = 0 then
+            Response.Status := 1;
+            Ada.Text_IO.Put_Line ("Error: No answers in response");
+            return;
+         end if;
+      end;
+
+      -- Skip question section
+      Pos := Skip_Name (Buffer, 13);
+      Pos := Pos + 4;  -- Skip QTYPE and QCLASS
+
+      -- Parse all answers
+      for I in 1 .. Max_IPs loop
+         exit when Pos + 10 > Buffer'Last;
+         
+         -- Skip name field (could be a pointer or full name)
+         Pos := Skip_Name (Buffer, Pos);
+         
+         -- Check type (should be 1 for A record)
+         if Buffer (Pos) = 0 and then Buffer (Pos + 1) = 1 then
+            -- Skip class and TTL
+            Pos := Pos + 8;
+            
+            -- Check data length (should be 4 for IPv4)
+            declare
+               Data_Length : constant Natural := Natural (Buffer (Pos)) * 256 + Natural (Buffer (Pos + 1));
+            begin
+               if Data_Length = 4 then
+                  Pos := Pos + 2;
+                  
+                  -- Convert IP address to string
+                  declare
+                     IP : String (1 .. 15);
+                     IP_Len : Natural := 0;
+                  begin
+                     for J in 0 .. 3 loop
+                        if IP_Len > 0 then
+                           IP_Len := IP_Len + 1;
+                           IP (IP_Len) := '.';
+                        end if;
+                        declare
+                           Num : constant String := Natural'Image (Natural (Buffer (Pos + Stream_Element_Offset (J))));
+                        begin
+                           for C of Num (2 .. Num'Last) loop
+                              IP_Len := IP_Len + 1;
+                              IP (IP_Len) := C;
+                           end loop;
+                        end;
+                     end loop;
+                     Current_Count := Current_Count + 1;
+                     Response.IPs (Current_Count) := (others => ' ');  -- Initialize with spaces
+                     Response.IPs (Current_Count)(1 .. IP_Len) := IP (1 .. IP_Len);
+                     Response.Count := IP_Count (Current_Count);
+                     Ada.Text_IO.Put_Line ("Found IP address: " & IP (1 .. IP_Len));
+                  end;
+               else
+                  Ada.Text_IO.Put_Line ("Error: Invalid data length for A record:" & Data_Length'Image);
+               end if;
+            end;
+         else
+            Ada.Text_IO.Put_Line ("Error: Not an A record");
+         end if;
+         
+         -- Move to next answer
+         Pos := Pos + 4;  -- Skip the IP address
+      end loop;
+
+      if Response.Count = 0 then
+         Response.Status := 1;
+         Ada.Text_IO.Put_Line ("Error: Could not parse any answers");
+      end if;
+   end Parse_Response;
+
+   -- Resolve a domain name
+   procedure Resolve (Domain : String; Result : out DNS_Response) is
+      Socket : Socket_Type;
+      Addr   : Sock_Addr_Type;
+      Buffer : Stream_Element_Array (1 .. 512);
+      Last   : Stream_Element_Offset;
+      Request : DNS_Request;
+      Timeout : constant Duration := 5.0;  -- 5 second timeout
+      Start_Time : Time;
+   begin
+      Ada.Text_IO.Put_Line ("Resolving domain: " & Domain);
+      
+      -- Create UDP socket
       Create_Socket (Socket, Family_Inet, Socket_Datagram);
-
-      GNAT.Sockets.Send_Socket (Socket, Request_Buffer.Buffer, Request_Length, DNS_Provider);
-      Ada.Text_IO.Put_Line ("Sent: " & Request_Length'Img & " bytes");
-      Ada.Text_IO.Put_Line ("Question" & Request'Img);
-      for I in 1 .. Request_Length loop
-         Ada.Text_IO.Put (Request_Buffer.Buffer (I)'Img & "");
+      
+      -- Set socket timeout
+      Set_Socket_Option (Socket, Socket_Level, (Receive_Timeout, Timeout));
+      
+      -- Set up server address using Cloudflare
+      Addr := Server_Addresses (Cloudflare);
+      
+      Ada.Text_IO.Put_Line ("Sending request to DNS server: " & Image (Addr.Addr) & ":" & Addr.Port'Image);
+      
+      -- Create and send request
+      Create_Request (Domain, Request);
+      Send_Socket (Socket, Request.Buffer (1 .. Request.Size), Last, Addr);
+      
+      Ada.Text_IO.Put_Line ("Sent" & Last'Image & " bytes");
+      
+      -- Record start time
+      Start_Time := Clock;
+      
+      -- Try to receive response with timeout
+      while Clock - Start_Time < Timeout loop
+         begin
+            Receive_Socket (Socket, Buffer, Last, Addr);
+            Ada.Text_IO.Put_Line ("Received" & Last'Image & " bytes from " & Image (Addr.Addr));
+            Parse_Response (Buffer (1 .. Last), Result);
+            Close_Socket (Socket);
+            return;
+         exception
+            when Socket_Error =>
+               if Clock - Start_Time >= Timeout then
+                  Close_Socket (Socket);
+                  Ada.Text_IO.Put_Line ("Error: DNS request timed out");
+                  raise Socket_Error with "DNS request timed out";
+               end if;
+               delay 0.1;  -- Small delay before retry
+         end;
       end loop;
+      
+      Close_Socket (Socket);
+      Result.Status := 1;  -- Error
+      Result.Count := 0;
+      Ada.Text_IO.Put_Line ("Error: DNS request failed");
+   end Resolve;
 
-      Ada.Text_IO.New_Line;
-      Ada.Text_IO.Put_Line ("====================================");
-      Ada.Text_IO.New_Line;
-
-      GNAT.Sockets.Receive_Socket (Socket, Response_Buffer, Response_Length, Receive_Addr);
-
-      Ada.Text_IO.Put_Line ("Received: " & Response_Length'Img & " bytes");
-      Ada.Text_IO.Put_Line ("From: " & Image (Receive_Addr.Addr));
-      for I in 1 .. Response_Length loop
-         Ada.Text_IO.Put (Response_Buffer (I)'Img & "");
-      end loop;
-
-      Ada.Text_IO.New_Line;
-      Ada.Text_IO.Put_Line ("Received" & Response'Img);
-
-      return Domain;
+   -- Legacy function for backward compatibility
+   function Resolve (Domain : String) return String is
+      Response : DNS_Response;
+   begin
+      Resolve (Domain, Response);
+      if Response.Status = 0 and then Response.Count > 0 then
+         return Response.IPs (1);
+      else
+         return "Error resolving domain";
+      end if;
    end Resolve;
 end DNS;
+

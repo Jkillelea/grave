@@ -1,28 +1,20 @@
 with System;
 with Interfaces.C.Extensions; use Interfaces.C.Extensions;
+with Ada.Calendar; use Ada.Calendar;
+with GNAT.Sockets; use GNAT.Sockets;
+with Ada.Streams; use Ada.Streams;
 
 package DNS is
-
-   --  type IP_Address_Variant is (V4, V6);
-   --  type IP_Address_Bytes is array (Positive range <>) of Unsigned_1;
-   --  type IP_Address (Variant : IP_Address_Variant) is record
-   --      case Variant is
-   --      when V4 =>
-   --          V4_Bytes : IP_Address_Bytes (1 .. 4);
-   --      when V6 =>
-   --          V6_Bytes : IP_Address_Bytes (1 .. 32);
-   --      end case;
-   --  end record;
 
    type Query_Type is (Query, Response);
    for Query_Type use (Query => 0, Response => 1);
    for Query_Type'Size use 1; -- bit
 
    type Resolver is record
-      Id : Integer;
-      Flags : Integer;
-      Num_Questions : Integer := 0;
-      Num_Answers : Integer := 0;
+      Id              : Integer;
+      Flags           : Integer;
+      Num_Questions   : Integer := 0;
+      Num_Answers     : Integer := 0;
       Num_Authorities : Integer := 0;
       Num_Additionals : Integer := 0;
    end record;
@@ -47,7 +39,7 @@ package DNS is
    --  Bitfield layout in 12 bytes (96 bits)
    for Header_Type'Size use 12 * System.Storage_Unit;
 
-   --  byte align
+   --  Byte align
    for Header_Type'Alignment use 1;
 
    for Header_Type use
@@ -112,10 +104,37 @@ package DNS is
            IP : Unsigned_32;
        end record;
 
+   -- Maximum number of IP addresses we'll store
+   Max_IPs : constant := 10;
+
+   type IP_Count is range 0 .. Max_IPs;
+   type IP_Array is array (1 .. Max_IPs) of String (1 .. 15);
+
+   type DNS_Response is record
+      IPs    : IP_Array;
+      Count  : IP_Count;
+      Status : Natural;
+   end record;
+
+   -- DNS Request type
+   type DNS_Request is record
+      Buffer : Stream_Element_Array (1 .. 512);
+      Size   : Stream_Element_Offset;
+   end record;
+
+   -- Create a DNS request
+   procedure Create_Request (Domain : String; Request : out DNS_Request);
+
+   -- Parse a DNS response
+   procedure Parse_Response (Buffer : Stream_Element_Array; Response : out DNS_Response);
+
+   -- Resolve a domain name
+   procedure Resolve (Domain : String; Result : out DNS_Response);
+
    function Resolve (Domain : String) return String;
 
 private
-   Last_Id : Unsigned_16 := 0;
+   Query_Id : Unsigned_16 := 16#0F#;
 
    --  If the first two bits of the length field at set,
    --  we can expect a following byte (extended len)

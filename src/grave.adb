@@ -4,12 +4,22 @@ with Ada.Command_Line;
 with DNS;
 
 procedure Grave is
+   Response : DNS.DNS_Response;
 begin
    for I in 1 .. Ada.Command_Line.Argument_Count loop
       declare
-         Response : constant String := DNS.Resolve (Ada.Command_Line.Argument (I));
+         Domain : constant String := Ada.Command_Line.Argument (I);
       begin
-         Ada.Text_IO.Put_Line ("Answer: " & Response);
+         Ada.Text_IO.Put_Line ("Resolving " & Domain & ":");
+         DNS.Resolve (Domain, Response);
+         if Response.Status = 0 then
+            for J in Integer range 1 .. Integer (Response.Count) loop
+               Ada.Text_IO.Put_Line ("  " & Response.IPs (J));
+            end loop;
+         else
+            Ada.Text_IO.Put_Line ("  Error resolving domain");
+         end if;
+         Ada.Text_IO.New_Line;
       end;
    end loop;
 end Grave;
