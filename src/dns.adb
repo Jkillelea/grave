@@ -17,11 +17,34 @@ package body DNS is
                      Port   => 53)
    );
 
+   procedure Debug (Message : String) is
+   begin
+      if Logging_Level = Debug then
+         Ada.Text_IO.Put_Line ("[Debug] " & Message);
+      end if;
+   end Debug;
+
+   procedure Info (Message : String) is
+   begin
+      if Logging_Level = Debug or else Logging_Level = Info then
+         Ada.Text_IO.Put_Line ("[Info] " & Message);
+      end if;
+   end Info;
+
+   procedure Error (Message : String) is
+   begin
+      if Logging_Level = Debug or else Logging_Level = Info or else Logging_Level = Error then
+         Ada.Text_IO.Put_Line ("[Error] " & Message);
+      end if;
+   end Error;
+
    --  Create a DNS request
    procedure Create_Request (Domain : String; Request : out DNS_Request) is
-      Query_Id : constant Unsigned_16 := 1;
    begin
-      Ada.Text_IO.Put_Line ("Creating DNS request for domain: " & Domain);
+      Debug ("Creating DNS request for domain: " & Domain);
+
+      --  Increment the Query ID
+      Query_Id := Query_Id + 1;
 
       --  Set up the DNS header
       Request.Buffer (1) := Stream_Element (Query_Id / 256);
@@ -71,24 +94,28 @@ package body DNS is
          Request.Buffer (Pos + 3) := 1;
 
          Request.Size := Pos + 3;
-         Ada.Text_IO.Put_Line ("Request size:" & Request.Size'Image & " bytes");
+         Debug ("Request size:" & Request.Size'Image & " bytes");
       end;
    end Create_Request;
 
    --  Skip a domain name in DNS message format
    function Skip_Name (Buffer : Stream_Element_Array; Start : Stream_Element_Offset) return Stream_Element_Offset is
       Pos : Stream_Element_Offset := Start;
+      Length : Stream_Element := Buffer (Pos);
    begin
       loop
          exit when Pos > Buffer'Last;
 
+         Length := Buffer (Pos);
+         exit when Length = 0;
+
          --  Check for compression pointer
-         if (Buffer (Pos) and 16#C0#) = 16#C0# then
-            return Pos + 2;  --  Skip the 2-byte pointer
+         if (Length and 16#C0#) = 16#C0# then
+            return Pos + 2;  -- Skip the 2-byte pointer
          end if;
 
          --  Skip label
-         Pos := Pos + Stream_Element_Offset (Buffer (Pos)) + 1;
+         Pos := Pos + Stream_Element_Offset (Length) + 1;
       end loop;
       return Pos + 1;  --  Skip the terminating zero
    end Skip_Name;
@@ -98,7 +125,7 @@ package body DNS is
       Pos : Stream_Element_Offset := 1;
       Current_Count : Natural := 0;
    begin
-      Ada.Text_IO.Put_Line ("Parsing DNS response of" & Buffer'Length'Image & " bytes");
+      Debug ("Parsing DNS response of" & Buffer'Length'Image & " bytes");
 
       --  Initialize response
       Response.Count := 0;
@@ -107,7 +134,7 @@ package body DNS is
       --  Check response size
       if Buffer'Length < 12 then
          Response.Status := 1;
-         Ada.Text_IO.Put_Line ("Error: Response too short");
+         Error ("Response too short");
          return;
       end if;
 
@@ -118,7 +145,7 @@ package body DNS is
       begin
          if Rcode /= 0 then
             Response.Status := 1;
-            Ada.Text_IO.Put_Line ("Error: DNS response code:" & Rcode'Image);
+            Error ("DNS response code:" & Rcode'Image);
             return;
          end if;
       end;
@@ -127,10 +154,10 @@ package body DNS is
       declare
          AnCount : constant Natural := Natural (Buffer (7)) * 256 + Natural (Buffer (8));
       begin
-         Ada.Text_IO.Put_Line ("Number of answers:" & AnCount'Image);
+         Debug ("Number of answers:" & AnCount'Image);
          if AnCount = 0 then
             Response.Status := 1;
-            Ada.Text_IO.Put_Line ("Error: No answers in response");
+            Error ("No answers in response");
             return;
          end if;
       end;
@@ -181,14 +208,14 @@ package body DNS is
                      Response.IPs (Current_Count) := (others => ' ');  --  Initialize with spaces
                      Response.IPs (Current_Count)(1 .. IP_Len) := IP (1 .. IP_Len);
                      Response.Count := IP_Count (Current_Count);
-                     Ada.Text_IO.Put_Line ("Found IP address: " & IP (1 .. IP_Len));
+                     Debug ("Found IP address: " & IP (1 .. IP_Len));
                   end;
                else
-                  Ada.Text_IO.Put_Line ("Error: Invalid data length for A record:" & Data_Length'Image);
+                  Error ("Invalid data length for A record:" & Data_Length'Image);
                end if;
             end;
          else
-            Ada.Text_IO.Put_Line ("Error: Not an A record");
+            Error ("Not an A record");
          end if;
 
          --  Move to next answer
@@ -197,7 +224,7 @@ package body DNS is
 
       if Response.Count = 0 then
          Response.Status := 1;
-         Ada.Text_IO.Put_Line ("Error: Could not parse any answers");
+         Error ("Could not parse any answers");
       end if;
    end Parse_Response;
 
@@ -211,7 +238,7 @@ package body DNS is
       Timeout : constant Duration := 5.0;  --  5 second timeout
       Start_Time : Time;
    begin
-      Ada.Text_IO.Put_Line ("Resolving domain: " & Domain);
+      Info ("Resolving domain: " & Domain);
 
       --  Create UDP socket
       Create_Socket (Socket, Family_Inet, Socket_Datagram);
@@ -222,13 +249,13 @@ package body DNS is
       --  Set up server address using Cloudflare
       Addr := Server_Addresses (Cloudflare);
 
-      Ada.Text_IO.Put_Line ("Sending request to DNS server: " & Image (Addr.Addr) & ":" & Addr.Port'Image);
+      Debug ("Sending request to DNS server: " & Image (Addr.Addr) & ":" & Addr.Port'Image);
 
       --  Create and send request
       Create_Request (Domain, Request);
       Send_Socket (Socket, Request.Buffer (1 .. Request.Size), Last, Addr);
 
-      Ada.Text_IO.Put_Line ("Sent" & Last'Image & " bytes");
+      Debug ("Sent" & Last'Image & " bytes");
 
       --  Record start time
       Start_Time := Clock;
@@ -237,7 +264,7 @@ package body DNS is
       while Clock - Start_Time < Timeout loop
          begin
             Receive_Socket (Socket, Buffer, Last, Addr);
-            Ada.Text_IO.Put_Line ("Received" & Last'Image & " bytes from " & Image (Addr.Addr));
+            Debug ("Received" & Last'Image & " bytes from " & Image (Addr.Addr));
             Parse_Response (Buffer (1 .. Last), Result);
             Close_Socket (Socket);
             return;
@@ -245,7 +272,7 @@ package body DNS is
             when Socket_Error =>
                if Clock - Start_Time >= Timeout then
                   Close_Socket (Socket);
-                  Ada.Text_IO.Put_Line ("Error: DNS request timed out");
+                  Error ("DNS request timed out");
                   raise Socket_Error with "DNS request timed out";
                end if;
                delay 0.1;  --  Small delay before retry
@@ -255,7 +282,7 @@ package body DNS is
       Close_Socket (Socket);
       Result.Status := 1;  --  Error
       Result.Count := 0;
-      Ada.Text_IO.Put_Line ("Error: DNS request failed");
+      Error ("DNS request failed");
    end Resolve;
 
    --  Legacy function for backward compatibility
