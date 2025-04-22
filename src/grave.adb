@@ -10,14 +10,14 @@ begin
       declare
          Domain : constant String := Ada.Command_Line.Argument (I);
       begin
-         Ada.Text_IO.Put_Line ("Resolving " & Domain & ":");
+         DNS.Logging_Level := DNS.Debug;
          DNS.Resolve (Domain, Response);
          if Response.Status = 0 then
             for J in DNS.IP_Count range 1 .. Response.Count loop
                Ada.Text_IO.Put_Line ("  " & Response.IPs (J));
             end loop;
          else
-            Ada.Text_IO.Put_Line ("  Error resolving domain");
+            Ada.Text_IO.Put_Line ("Error resolving domain");
          end if;
          Ada.Text_IO.New_Line;
       end;
