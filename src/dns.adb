@@ -1,37 +1,38 @@
 with Ada.Text_IO;
-with Ada.Calendar; use Ada.Calendar;
-with GNAT.Sockets; use GNAT.Sockets;
-with Ada.Streams; use Ada.Streams;
-with Ada.Exceptions; use Ada.Exceptions;
+with Ada.Calendar;
+with GNAT.Sockets;
 
 package body DNS is
+   use Ada.Calendar;
+   use GNAT.Sockets;
+
    type DNS_Providers is (Google, Cloudflare);
 
-   Server_Addresses : constant array (DNS_Providers) of Sock_Addr_Type := [
-       Google => (Family => Family_Inet,
-                  Addr => Inet_Addr ("8.8.8.8"),
-                  Port => 53),
-       Cloudflare => (Family => Family_Inet,
-                      Addr => Inet_Addr ("1.1.1.1"),
-                      Port => 53)
-                  ];
+   Server_Addresses : constant array (DNS_Providers) of Sock_Addr_Type := (
+      Google => (Family => Family_Inet,
+                Addr   => Inet_Addr ("8.8.8.8"),
+                Port   => 53),
+      Cloudflare => (Family => Family_Inet,
+                     Addr   => Inet_Addr ("1.1.1.1"),
+                     Port   => 53)
+   );
 
-   -- Create a DNS request
+   --  Create a DNS request
    procedure Create_Request (Domain : String; Request : out DNS_Request) is
       Query_Id : constant Unsigned_16 := 1;
    begin
       Ada.Text_IO.Put_Line ("Creating DNS request for domain: " & Domain);
-      
-      -- Set up the DNS header
+
+      --  Set up the DNS header
       Request.Buffer (1) := Stream_Element (Query_Id / 256);
       Request.Buffer (2) := Stream_Element (Query_Id mod 256);
-      Request.Buffer (3) := 16#01#;  -- Standard query
-      Request.Buffer (4) := 16#01#;  -- Recursion desired
-      Request.Buffer (5) := 0;  -- QDCOUNT high byte
-      Request.Buffer (6) := 1;  -- QDCOUNT low byte (1 question)
-      Request.Buffer (7 .. 12) := [0, 0, 0, 0, 0, 0];  -- ANCOUNT, NSCOUNT, ARCOUNT
+      Request.Buffer (3) := 16#01#;  --  Standard query
+      Request.Buffer (4) := 16#01#;  --  Recursion desired
+      Request.Buffer (5) := 0;  --  QDCOUNT high byte
+      Request.Buffer (6) := 1;  --  QDCOUNT low byte (1 question)
+      Request.Buffer (7 .. 12) := (0, 0, 0, 0, 0, 0);  --  ANCOUNT, NSCOUNT, ARCOUNT
 
-      -- Convert domain name to DNS format
+      --  Convert domain name to DNS format
       declare
          Pos : Stream_Element_Offset := 13;
          Start : Positive := Domain'First;
@@ -43,11 +44,11 @@ package body DNS is
                Dot_Pos := Dot_Pos + 1;
             end loop;
 
-            -- Write length of label
+            --  Write length of label
             Request.Buffer (Pos) := Stream_Element (Dot_Pos - Start);
             Pos := Pos + 1;
 
-            -- Write label
+            --  Write label
             for I in Start .. Dot_Pos - 1 loop
                Request.Buffer (Pos) := Stream_Element'Val (Character'Pos (Domain (I)));
                Pos := Pos + 1;
@@ -57,15 +58,15 @@ package body DNS is
             Start := Dot_Pos + 1;
          end loop;
 
-         -- Terminating zero
+         --  Terminating zero
          Request.Buffer (Pos) := 0;
          Pos := Pos + 1;
 
-         -- Type A
+         --  Type A
          Request.Buffer (Pos) := 0;
          Request.Buffer (Pos + 1) := 1;
 
-         -- Class IN
+         --  Class IN
          Request.Buffer (Pos + 2) := 0;
          Request.Buffer (Pos + 3) := 1;
 
@@ -74,49 +75,43 @@ package body DNS is
       end;
    end Create_Request;
 
-   -- Skip a domain name in DNS message format
+   --  Skip a domain name in DNS message format
    function Skip_Name (Buffer : Stream_Element_Array; Start : Stream_Element_Offset) return Stream_Element_Offset is
       Pos : Stream_Element_Offset := Start;
    begin
       loop
          exit when Pos > Buffer'Last;
-         
-         declare
-            Length : Stream_Element := Buffer (Pos);
-         begin
-            exit when Length = 0;
-            
-            -- Check for compression pointer
-            if (Length and 16#C0#) = 16#C0# then
-               return Pos + 2;  -- Skip the 2-byte pointer
-            end if;
-            
-            -- Skip label
-            Pos := Pos + Stream_Element_Offset (Length) + 1;
-         end;
+
+         --  Check for compression pointer
+         if (Buffer (Pos) and 16#C0#) = 16#C0# then
+            return Pos + 2;  --  Skip the 2-byte pointer
+         end if;
+
+         --  Skip label
+         Pos := Pos + Stream_Element_Offset (Buffer (Pos)) + 1;
       end loop;
-      return Pos + 1;  -- Skip the terminating zero
+      return Pos + 1;  --  Skip the terminating zero
    end Skip_Name;
 
-   -- Parse a DNS response
+   --  Parse a DNS response
    procedure Parse_Response (Buffer : Stream_Element_Array; Response : out DNS_Response) is
       Pos : Stream_Element_Offset := 1;
       Current_Count : Natural := 0;
    begin
       Ada.Text_IO.Put_Line ("Parsing DNS response of" & Buffer'Length'Image & " bytes");
-      
-      -- Initialize response
+
+      --  Initialize response
       Response.Count := 0;
       Response.Status := 0;
-      
-      -- Check response size
+
+      --  Check response size
       if Buffer'Length < 12 then
          Response.Status := 1;
          Ada.Text_IO.Put_Line ("Error: Response too short");
          return;
       end if;
 
-      -- Check response flags
+      --  Check response flags
       declare
          Flags : constant Stream_Element := Buffer (4);
          Rcode : constant Stream_Element := Flags and 16#0F#;
@@ -128,7 +123,7 @@ package body DNS is
          end if;
       end;
 
-      -- Get answer count
+      --  Get answer count
       declare
          AnCount : constant Natural := Natural (Buffer (7)) * 256 + Natural (Buffer (8));
       begin
@@ -140,30 +135,30 @@ package body DNS is
          end if;
       end;
 
-      -- Skip question section
+      --  Skip question section
       Pos := Skip_Name (Buffer, 13);
-      Pos := Pos + 4;  -- Skip QTYPE and QCLASS
+      Pos := Pos + 4;  --  Skip QTYPE and QCLASS
 
-      -- Parse all answers
+      --  Parse all answers
       for I in 1 .. Max_IPs loop
          exit when Pos + 10 > Buffer'Last;
-         
-         -- Skip name field (could be a pointer or full name)
+
+         --  Skip name field (could be a pointer or full name)
          Pos := Skip_Name (Buffer, Pos);
-         
-         -- Check type (should be 1 for A record)
+
+         --  Check type (should be 1 for A record)
          if Buffer (Pos) = 0 and then Buffer (Pos + 1) = 1 then
-            -- Skip class and TTL
+            --  Skip class and TTL
             Pos := Pos + 8;
-            
-            -- Check data length (should be 4 for IPv4)
+
+            --  Check data length (should be 4 for IPv4)
             declare
                Data_Length : constant Natural := Natural (Buffer (Pos)) * 256 + Natural (Buffer (Pos + 1));
             begin
                if Data_Length = 4 then
                   Pos := Pos + 2;
-                  
-                  -- Convert IP address to string
+
+                  --  Convert IP address to string
                   declare
                      IP : String (1 .. 15);
                      IP_Len : Natural := 0;
@@ -183,7 +178,7 @@ package body DNS is
                         end;
                      end loop;
                      Current_Count := Current_Count + 1;
-                     Response.IPs (Current_Count) := (others => ' ');  -- Initialize with spaces
+                     Response.IPs (Current_Count) := (others => ' ');  --  Initialize with spaces
                      Response.IPs (Current_Count)(1 .. IP_Len) := IP (1 .. IP_Len);
                      Response.Count := IP_Count (Current_Count);
                      Ada.Text_IO.Put_Line ("Found IP address: " & IP (1 .. IP_Len));
@@ -195,9 +190,9 @@ package body DNS is
          else
             Ada.Text_IO.Put_Line ("Error: Not an A record");
          end if;
-         
-         -- Move to next answer
-         Pos := Pos + 4;  -- Skip the IP address
+
+         --  Move to next answer
+         Pos := Pos + 4;  --  Skip the IP address
       end loop;
 
       if Response.Count = 0 then
@@ -206,39 +201,39 @@ package body DNS is
       end if;
    end Parse_Response;
 
-   -- Resolve a domain name
+   --  Resolve a domain name
    procedure Resolve (Domain : String; Result : out DNS_Response) is
       Socket : Socket_Type;
       Addr   : Sock_Addr_Type;
       Buffer : Stream_Element_Array (1 .. 512);
       Last   : Stream_Element_Offset;
       Request : DNS_Request;
-      Timeout : constant Duration := 5.0;  -- 5 second timeout
+      Timeout : constant Duration := 5.0;  --  5 second timeout
       Start_Time : Time;
    begin
       Ada.Text_IO.Put_Line ("Resolving domain: " & Domain);
-      
-      -- Create UDP socket
+
+      --  Create UDP socket
       Create_Socket (Socket, Family_Inet, Socket_Datagram);
-      
-      -- Set socket timeout
+
+      --  Set socket timeout
       Set_Socket_Option (Socket, Socket_Level, (Receive_Timeout, Timeout));
-      
-      -- Set up server address using Cloudflare
+
+      --  Set up server address using Cloudflare
       Addr := Server_Addresses (Cloudflare);
-      
+
       Ada.Text_IO.Put_Line ("Sending request to DNS server: " & Image (Addr.Addr) & ":" & Addr.Port'Image);
-      
-      -- Create and send request
+
+      --  Create and send request
       Create_Request (Domain, Request);
       Send_Socket (Socket, Request.Buffer (1 .. Request.Size), Last, Addr);
-      
+
       Ada.Text_IO.Put_Line ("Sent" & Last'Image & " bytes");
-      
-      -- Record start time
+
+      --  Record start time
       Start_Time := Clock;
-      
-      -- Try to receive response with timeout
+
+      --  Try to receive response with timeout
       while Clock - Start_Time < Timeout loop
          begin
             Receive_Socket (Socket, Buffer, Last, Addr);
@@ -253,17 +248,17 @@ package body DNS is
                   Ada.Text_IO.Put_Line ("Error: DNS request timed out");
                   raise Socket_Error with "DNS request timed out";
                end if;
-               delay 0.1;  -- Small delay before retry
+               delay 0.1;  --  Small delay before retry
          end;
       end loop;
-      
+
       Close_Socket (Socket);
-      Result.Status := 1;  -- Error
+      Result.Status := 1;  --  Error
       Result.Count := 0;
       Ada.Text_IO.Put_Line ("Error: DNS request failed");
    end Resolve;
 
-   -- Legacy function for backward compatibility
+   --  Legacy function for backward compatibility
    function Resolve (Domain : String) return String is
       Response : DNS_Response;
    begin
@@ -275,4 +270,3 @@ package body DNS is
       end if;
    end Resolve;
 end DNS;
-

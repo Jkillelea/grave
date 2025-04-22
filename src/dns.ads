@@ -1,7 +1,5 @@
 with System;
 with Interfaces.C.Extensions; use Interfaces.C.Extensions;
-with Ada.Calendar; use Ada.Calendar;
-with GNAT.Sockets; use GNAT.Sockets;
 with Ada.Streams; use Ada.Streams;
 
 package DNS is
@@ -67,8 +65,6 @@ package DNS is
        end record;
 
    --  The request that we send, with a question, to the DNS server
-   --  TODO: Name_Len is a discriminant for the buffer size and not part of the struct! How do we make it
-   --  not be represented in the struct's data values?
    type Request_Type (Name_Len : Positive) is
        record
            Hdr   : Header_Type;
@@ -81,16 +77,16 @@ package DNS is
    type Response_Type (Name_Len : Positive) is
        record
            Hdr : Header_Type;
-
-           --  Is this an overflow risk? We don't know the length of the response domain name before we get it.
-           --  We may need to parse this section on the fly.
+           --  Is this an overflow risk?
+           --  We don't know the length of the response domain name
+           --  before we get it.
            Question : Question_Type (Name_Len);
-           -- Answer : Answer_Type;
+           --  Answer : Answer_Type;
        end record;
 
    type Preamble_Type is
        record
-           -- Name  : Label_Sequence; --  TODO
+           --  Name  : Label_Sequence; --  TODO
            Rtype : Unsigned_16;
            Class : Unsigned_16;
            TTL   : Unsigned_32;
@@ -104,31 +100,32 @@ package DNS is
            IP : Unsigned_32;
        end record;
 
-   -- Maximum number of IP addresses we'll store
+   --  Maximum number of IP addresses we'll store
    Max_IPs : constant := 10;
 
-   type IP_Count is range 0 .. Max_IPs;
+   subtype IP_Count is Natural range 0 .. Max_IPs;
    type IP_Array is array (1 .. Max_IPs) of String (1 .. 15);
 
    type DNS_Response is record
-      IPs    : IP_Array;
-      Count  : IP_Count;
-      Status : Natural;
+      IPs     : IP_Array;
+      Count   : IP_Count;
+      Status  : Natural;
    end record;
 
-   -- DNS Request type
+   --  DNS Request type
    type DNS_Request is record
-      Buffer : Stream_Element_Array (1 .. 512);
-      Size   : Stream_Element_Offset;
+      Buffer  : Stream_Element_Array (1 .. 512);
+      Size    : Stream_Element_Offset;
    end record;
 
-   -- Create a DNS request
+   --  Create a DNS request
    procedure Create_Request (Domain : String; Request : out DNS_Request);
 
-   -- Parse a DNS response
-   procedure Parse_Response (Buffer : Stream_Element_Array; Response : out DNS_Response);
+   --  Parse a DNS response
+   procedure Parse_Response (Buffer : Stream_Element_Array;
+                             Response : out DNS_Response);
 
-   -- Resolve a domain name
+   --  Resolve a domain name
    procedure Resolve (Domain : String; Result : out DNS_Response);
 
    function Resolve (Domain : String) return String;
@@ -139,7 +136,5 @@ private
    --  If the first two bits of the length field at set,
    --  we can expect a following byte (extended len)
    Extended_Len_Mask : Unsigned_16 := 16#C000#;
-
-   --  Server_Address : GNAT.Sockets.Inet_Addr_Type := (Family_Inet, Sin_V4 : Inet_Addr_V4_Type)
 
 end DNS;

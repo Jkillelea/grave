@@ -13,7 +13,7 @@ begin
          Ada.Text_IO.Put_Line ("Resolving " & Domain & ":");
          DNS.Resolve (Domain, Response);
          if Response.Status = 0 then
-            for J in Integer range 1 .. Integer (Response.Count) loop
+            for J in DNS.IP_Count range 1 .. Response.Count loop
                Ada.Text_IO.Put_Line ("  " & Response.IPs (J));
             end loop;
          else
