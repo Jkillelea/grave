@@ -1,10 +1,13 @@
-with Ada.Text_IO;
 with Ada.Calendar;
 with GNAT.Sockets;
+with Log_Level;
+with Log;
 
 package body DNS is
    use Ada.Calendar;
    use GNAT.Sockets;
+   
+   package Logger is new Log (Local_Log_Level => Log_Level.Error);
 
    type DNS_Providers is (Google, Cloudflare);
 
@@ -17,31 +20,10 @@ package body DNS is
                      Port   => 53)
    );
 
-   procedure Debug (Message : String) is
-   begin
-      if Logging_Level = Debug then
-         Ada.Text_IO.Put_Line ("[Debug] " & Message);
-      end if;
-   end Debug;
-
-   procedure Info (Message : String) is
-   begin
-      if Logging_Level = Debug or else Logging_Level = Info then
-         Ada.Text_IO.Put_Line ("[Info] " & Message);
-      end if;
-   end Info;
-
-   procedure Error (Message : String) is
-   begin
-      if Logging_Level = Debug or else Logging_Level = Info or else Logging_Level = Error then
-         Ada.Text_IO.Put_Line ("[Error] " & Message);
-      end if;
-   end Error;
-
    --  Create a DNS request
    procedure Create_Request (Domain : String; Request : out DNS_Request) is
    begin
-      Debug ("Creating DNS request for domain: " & Domain);
+      Logger.Debug ("Creating DNS request for domain: " & Domain);
 
       --  Increment the Query ID
       Query_Id := Query_Id + 1;
@@ -94,7 +76,7 @@ package body DNS is
          Request.Buffer (Pos + 3) := 1;
 
          Request.Size := Pos + 3;
-         Debug ("Request size:" & Request.Size'Image & " bytes");
+         Logger.Debug ("Request size:" & Request.Size'Image & " bytes");
       end;
    end Create_Request;
 
@@ -125,7 +107,7 @@ package body DNS is
       Pos : Stream_Element_Offset := 1;
       Current_Count : Natural := 0;
    begin
-      Debug ("Parsing DNS response of" & Buffer'Length'Image & " bytes");
+      Logger.Debug ("Parsing DNS response of" & Buffer'Length'Image & " bytes");
 
       --  Initialize response
       Response.Count := 0;
@@ -134,7 +116,7 @@ package body DNS is
       --  Check response size
       if Buffer'Length < 12 then
          Response.Status := Response_Error;
-         Error ("Response too short");
+         Logger.Error ("Response too short");
          return;
       end if;
 
@@ -145,7 +127,7 @@ package body DNS is
       begin
          if Rcode /= 0 then
             Response.Status := Response_Error;
-            Error ("DNS response code:" & Rcode'Image);
+            Logger.Error ("DNS response code:" & Rcode'Image);
             return;
          end if;
       end;
@@ -154,10 +136,10 @@ package body DNS is
       declare
          AnCount : constant Natural := Natural (Buffer (7)) * 256 + Natural (Buffer (8));
       begin
-         Debug ("Number of answers:" & AnCount'Image);
+         Logger.Debug ("Number of answers:" & AnCount'Image);
          if AnCount = 0 then
             Response.Status := Response_Error;
-            Error ("No answers in response");
+            Logger.Error ("No answers in response");
             return;
          end if;
       end;
@@ -208,14 +190,14 @@ package body DNS is
                      Response.IPs (Current_Count) := (others => ' ');  --  Initialize with spaces
                      Response.IPs (Current_Count)(1 .. IP_Len) := IP (1 .. IP_Len);
                      Response.Count := IP_Count (Current_Count);
-                     Debug ("Found IP address: " & IP (1 .. IP_Len));
+                     Logger.Debug ("Found IP address: " & IP (1 .. IP_Len));
                   end;
                else
-                  Error ("Invalid data length for A record:" & Data_Length'Image);
+                  Logger.Error ("Invalid data length for A record:" & Data_Length'Image);
                end if;
             end;
          else
-            Error ("Not an A record");
+            Logger.Error ("Not an A record");
          end if;
 
          --  Move to next answer
@@ -224,7 +206,7 @@ package body DNS is
 
       if Response.Count = 0 then
          Response.Status := Response_Error;
-         Error ("Could not parse any answers");
+         Logger.Error ("Could not parse any answers");
       end if;
    end Parse_Response;
 
@@ -238,7 +220,7 @@ package body DNS is
       Timeout : constant Duration := 5.0;  --  5 second timeout
       Start_Time : Time;
    begin
-      Info ("Resolving domain: " & Domain);
+      Logger.Info ("Resolving domain: " & Domain);
 
       --  Create UDP socket
       Create_Socket (Socket, Family_Inet, Socket_Datagram);
@@ -249,13 +231,13 @@ package body DNS is
       --  Set up server address using Cloudflare
       Addr := Server_Addresses (Cloudflare);
 
-      Debug ("Sending request to DNS server: " & Image (Addr.Addr) & ":" & Addr.Port'Image);
+      Logger.Debug ("Sending request to DNS server: " & Image (Addr.Addr) & ":" & Addr.Port'Image);
 
       --  Create and send request
       Create_Request (Domain, Request);
       Send_Socket (Socket, Request.Buffer (1 .. Request.Size), Last, Addr);
 
-      Debug ("Sent" & Last'Image & " bytes");
+      Logger.Debug ("Sent" & Last'Image & " bytes");
 
       --  Record start time
       Start_Time := Clock;
@@ -264,7 +246,7 @@ package body DNS is
       while Clock - Start_Time < Timeout loop
          begin
             Receive_Socket (Socket, Buffer, Last, Addr);
-            Debug ("Received" & Last'Image & " bytes from " & Image (Addr.Addr));
+            Logger.Debug ("Received" & Last'Image & " bytes from " & Image (Addr.Addr));
             Parse_Response (Buffer (1 .. Last), Result);
             Close_Socket (Socket);
             return;
@@ -272,7 +254,7 @@ package body DNS is
             when Socket_Error =>
                if Clock - Start_Time >= Timeout then
                   Close_Socket (Socket);
-                  Error ("DNS request timed out");
+                  Logger.Error ("DNS request timed out");
                   raise Socket_Error with "DNS request timed out";
                end if;
                delay 0.1;  --  Small delay before retry
@@ -282,7 +264,7 @@ package body DNS is
       Close_Socket (Socket);
       Result.Status := Response_Error;
       Result.Count := 0;
-      Error ("DNS request failed");
+      Logger.Error ("DNS request failed");
    end Resolve;
 
    --  Legacy function for backward compatibility

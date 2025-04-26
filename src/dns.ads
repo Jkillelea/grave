@@ -7,9 +7,6 @@ package DNS is
    for Query_Type use (Query => 0, Response => 1);
    for Query_Type'Size use 1; -- bit
 
-   type Log_Level is (Debug, Info, Error);
-   Logging_Level : Log_Level := Info;
-
    --  Maximum number of IP addresses we'll store
    Max_IPs : constant := 10;
 
