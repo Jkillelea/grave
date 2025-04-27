@@ -23,6 +23,7 @@ package body DNS is
    --  Create a DNS request
    function Create_Request (Domain : String) return DNS_Request is
       Request : DNS_Request;
+      Qd_Count : constant Unsigned_16 := 1;
    begin
       Logger.Debug ("Creating DNS request for domain: " & Domain);
 
@@ -34,8 +35,8 @@ package body DNS is
       Request.Buffer (2) := Stream_Element (Query_Id mod 256);
       Request.Buffer (3) := 16#01#;  --  Standard query
       Request.Buffer (4) := 16#01#;  --  Recursion desired
-      Request.Buffer (5) := 0;  --  QDCOUNT high byte
-      Request.Buffer (6) := 1;  --  QDCOUNT low byte (1 question)
+      Request.Buffer (5) := Stream_Element (Qd_Count / 256);
+      Request.Buffer (6) := Stream_Element (Qd_Count mod 256);
       Request.Buffer (7 .. 12) := (0, 0, 0, 0, 0, 0);  --  ANCOUNT, NSCOUNT, ARCOUNT
 
       --  Convert domain name to DNS format
@@ -219,7 +220,7 @@ package body DNS is
       Timeout    : constant Duration    := 5.0;  --  5 second timeout
       Start_Time : Time;
       Socket     : Socket_Type;
-      Addr       : Sock_Addr_Type;
+      Server     : Sock_Addr_Type;
       Buffer     : Stream_Element_Array (1 .. 512);
       Last       : Stream_Element_Offset;
    begin
@@ -232,12 +233,12 @@ package body DNS is
       Set_Socket_Option (Socket, Socket_Level, (Receive_Timeout, Timeout));
 
       --  Set up server address using Cloudflare
-      Addr := Server_Addresses (Cloudflare);
+      Server := Server_Addresses (Cloudflare);
 
-      Logger.Debug ("Sending request to DNS server: " & Image (Addr.Addr) & ":" & Addr.Port'Image);
+      Logger.Debug ("Sending request to DNS server: " & Image (Server.Addr) & ":" & Server.Port'Image);
 
       --  Send request
-      Send_Socket (Socket, Request.Buffer (1 .. Request.Size), Last, Addr);
+      Send_Socket (Socket, Request.Buffer (1 .. Request.Size), Last, Server);
 
       Logger.Debug ("Sent" & Last'Image & " bytes");
 
@@ -247,8 +248,8 @@ package body DNS is
       --  Try to receive response with timeout
       while Clock - Start_Time < Timeout loop
          begin
-            Receive_Socket (Socket, Buffer, Last, Addr);
-            Logger.Debug ("Received" & Last'Image & " bytes from " & Image (Addr.Addr));
+            Receive_Socket (Socket, Buffer, Last, Server);
+            Logger.Debug ("Received" & Last'Image & " bytes from " & Image (Server.Addr));
             Parse_Response (Buffer (1 .. Last), Result);
             Close_Socket (Socket);
             return;
