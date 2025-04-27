@@ -7,7 +7,7 @@ package body DNS is
    use Ada.Calendar;
    use GNAT.Sockets;
    
-   package Logger is new Log (Local_Log_Level => Log_Level.Error);
+   package Logger is new Log (Log_Level.Error);
 
    type DNS_Providers is (Google, Cloudflare);
 
@@ -24,6 +24,8 @@ package body DNS is
    function Create_Request (Domain : String) return DNS_Request is
       Request : DNS_Request;
       Qd_Count : constant Unsigned_16 := 1;
+      Standard_Query : constant Unsigned_8 := 16#01#;
+      Recursion_Desired : constant Unsigned_8 := 16#01#;
    begin
       Logger.Debug ("Creating DNS request for domain: " & Domain);
 
@@ -31,12 +33,12 @@ package body DNS is
       Query_Id := Query_Id + 1;
 
       --  Set up the DNS header
-      Request.Buffer (1) := Stream_Element (Query_Id / 256);
-      Request.Buffer (2) := Stream_Element (Query_Id mod 256);
-      Request.Buffer (3) := 16#01#;  --  Standard query
-      Request.Buffer (4) := 16#01#;  --  Recursion desired
-      Request.Buffer (5) := Stream_Element (Qd_Count / 256);
-      Request.Buffer (6) := Stream_Element (Qd_Count mod 256);
+      Request.Buffer (1 .. 2) := (Stream_Element (Query_Id / 256),
+                                  Stream_Element (Query_Id mod 256));
+      Request.Buffer (3) := Stream_Element (Standard_Query);
+      Request.Buffer (4) := Stream_Element (Recursion_Desired);
+      Request.Buffer (5 .. 6) := (Stream_Element (Qd_Count / 256),
+                                  Stream_Element (Qd_Count mod 256));
       Request.Buffer (7 .. 12) := (0, 0, 0, 0, 0, 0);  --  ANCOUNT, NSCOUNT, ARCOUNT
 
       --  Convert domain name to DNS format

@@ -17,6 +17,5 @@ begin
       else
          Logger.Error ("Error resolving domain");
       end if;
-      Ada.Text_IO.New_Line;
    end loop;
 end Grave;
