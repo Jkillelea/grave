@@ -5,14 +5,14 @@ package body Log is
     procedure Debug (Message : String) is
     begin
         if Local_Log_Level <= Log_Level.Debug then
-            Write_Log (Message);
+            Write_Log ("[Debug]: " & Message);
         end if;
     end Debug;
 
     procedure Info (Message : String) is
     begin
         if Local_Log_Level <= Log_Level.Info then
-            Write_Log (Message);
+            Write_Log ("[Info]: " & Message);
         end if;
     end Info;
 
@@ -21,7 +21,7 @@ package body Log is
         --  if Local_Log_Level <= Log_Level.Error then
         --      Write_Log (Message);
         --  end if;
-        Write_Log (Message);
+        Write_Log ("[Error]: " & Message);
     end Error;
 
     procedure Write_Log (Message : String) is
