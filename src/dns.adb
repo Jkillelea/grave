@@ -21,7 +21,8 @@ package body DNS is
    );
 
    --  Create a DNS request
-   procedure Create_Request (Domain : String; Request : out DNS_Request) is
+   function Create_Request (Domain : String) return DNS_Request is
+      Request : DNS_Request;
    begin
       Logger.Debug ("Creating DNS request for domain: " & Domain);
 
@@ -78,6 +79,8 @@ package body DNS is
          Request.Size := Pos + 3;
          Logger.Debug ("Request size:" & Request.Size'Image & " bytes");
       end;
+
+      return Request;
    end Create_Request;
 
    --  Skip a domain name in DNS message format
@@ -212,13 +215,13 @@ package body DNS is
 
    --  Resolve a domain name
    procedure Resolve (Domain : String; Result : out DNS_Response) is
-      Socket : Socket_Type;
-      Addr   : Sock_Addr_Type;
-      Buffer : Stream_Element_Array (1 .. 512);
-      Last   : Stream_Element_Offset;
-      Request : DNS_Request;
-      Timeout : constant Duration := 5.0;  --  5 second timeout
+      Request    : constant DNS_Request := Create_Request (Domain);
+      Timeout    : constant Duration    := 5.0;  --  5 second timeout
       Start_Time : Time;
+      Socket     : Socket_Type;
+      Addr       : Sock_Addr_Type;
+      Buffer     : Stream_Element_Array (1 .. 512);
+      Last       : Stream_Element_Offset;
    begin
       Logger.Info ("Resolving domain: " & Domain);
 
@@ -233,8 +236,7 @@ package body DNS is
 
       Logger.Debug ("Sending request to DNS server: " & Image (Addr.Addr) & ":" & Addr.Port'Image);
 
-      --  Create and send request
-      Create_Request (Domain, Request);
+      --  Send request
       Send_Socket (Socket, Request.Buffer (1 .. Request.Size), Last, Addr);
 
       Logger.Debug ("Sent" & Last'Image & " bytes");

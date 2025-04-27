@@ -33,7 +33,7 @@ package DNS is
    end record;
 
    --  Create a DNS request
-   procedure Create_Request (Domain : String; Request : out DNS_Request);
+   function Create_Request (Domain : String) return DNS_Request;
 
    --  Parse a DNS response
    procedure Parse_Response (Buffer : Stream_Element_Array;
