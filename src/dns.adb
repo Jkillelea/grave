@@ -166,7 +166,7 @@ package body DNS is
       Pos := Pos + 4;  --  Skip QTYPE and QCLASS
 
       --  Parse all answers
-      for I in 1 .. Max_IPs loop
+      for I in IP_Count'Range loop
          exit when Pos + 10 > Buffer'Last;
 
          --  Skip name field (could be a pointer or full name)
@@ -181,21 +181,23 @@ package body DNS is
             declare
                Data_Length : constant Natural := Natural (Buffer (Pos)) * 256 + Natural (Buffer (Pos + 1));
             begin
+               Pos := Pos + 2; -- Move past the data length
                if Data_Length = 4 then
-                  Pos := Pos + 2;
 
                   --  Convert IP address to string
                   declare
                      IP : String (1 .. 15);
                      IP_Len : Natural := 0;
                   begin
+                      -- Parse each octet
                      for J in 0 .. 3 loop
                         if IP_Len > 0 then
                            IP_Len := IP_Len + 1;
                            IP (IP_Len) := '.';
                         end if;
                         declare
-                           Num : constant String := Natural'Image (Natural (Buffer (Pos + Stream_Element_Offset (J))));
+                           Octet : constant Stream_Element := Buffer (Pos + Stream_Element_Offset (J));
+                           Num : constant String := Stream_Element'Image (Octet);
                         begin
                            for C of Num (2 .. Num'Last) loop
                               IP_Len := IP_Len + 1;
