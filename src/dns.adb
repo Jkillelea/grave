@@ -1,11 +1,10 @@
-with Ada.Calendar;
-with GNAT.Sockets;
+with Ada.Calendar; use Ada.Calendar;
+with DNS;
+with GNAT.Sockets; use GNAT.Sockets;
 with Log_Level;
 with Log;
 
 package body DNS is
-   use Ada.Calendar;
-   use GNAT.Sockets;
    
    package Logger is new Log (Log_Level.Error);
 
@@ -22,9 +21,9 @@ package body DNS is
 
    --  Create a DNS request
    function Create_Request (Domain : String) return DNS_Request is
-      Request : DNS_Request;
-      Qd_Count : constant Unsigned_16 := 1;
-      Standard_Query : constant Unsigned_8 := 16#01#;
+      Request           : DNS_Request;
+      Qd_Count          : constant Unsigned_16 := 1;
+      Standard_Query    : constant Unsigned_8 := 16#01#;
       Recursion_Desired : constant Unsigned_8 := 16#01#;
    begin
       Logger.Debug ("Creating DNS request for domain: " & Domain);
@@ -108,6 +107,18 @@ package body DNS is
       return Pos + 1;  --  Skip the terminating zero
    end Skip_Name;
 
+   -- Returns true if the buffer marks the start of an A record.
+   function Is_A_Record (Buffer1 : Stream_Element; Buffer2 : Stream_Element) return Boolean
+   is
+       A_Record : Boolean := False;
+   begin
+       if (Buffer1 = 0 and then Buffer2 = 1) then
+           A_Record := True;
+       end if;
+       return A_Record;
+   end Is_A_Record;
+
+
    --  Parse a DNS response
    procedure Parse_Response (Buffer : Stream_Element_Array; Response : out DNS_Response) is
       Pos : Stream_Element_Offset := 1;
@@ -116,12 +127,12 @@ package body DNS is
       Logger.Debug ("Parsing DNS response of" & Buffer'Length'Image & " bytes");
 
       --  Initialize response
-      Response.Count := 0;
-      Response.Status := Response_Ok;
+      Response.Count := DNS.IP_Count'First;
+      Response.Status := Ok;
 
       --  Check response size
       if Buffer'Length < 12 then
-         Response.Status := Response_Error;
+         Response.Status := Error;
          Logger.Error ("Response too short");
          return;
       end if;
@@ -132,7 +143,7 @@ package body DNS is
          Rcode : constant Stream_Element := Flags and 16#0F#;
       begin
          if Rcode /= 0 then
-            Response.Status := Response_Error;
+            Response.Status := Error;
             Logger.Error ("DNS response code:" & Rcode'Image);
             return;
          end if;
@@ -144,7 +155,7 @@ package body DNS is
       begin
          Logger.Debug ("Number of answers:" & AnCount'Image);
          if AnCount = 0 then
-            Response.Status := Response_Error;
+            Response.Status := Error;
             Logger.Error ("No answers in response");
             return;
          end if;
@@ -162,7 +173,7 @@ package body DNS is
          Pos := Skip_Name (Buffer, Pos);
 
          --  Check type (should be 1 for A record)
-         if Buffer (Pos) = 0 and then Buffer (Pos + 1) = 1 then
+         if Is_A_Record (Buffer (Pos), Buffer (Pos + 1)) then
             --  Skip class and TTL
             Pos := Pos + 8;
 
@@ -211,54 +222,33 @@ package body DNS is
       end loop;
 
       if Response.Count = 0 then
-         Response.Status := Response_Error;
+         Response.Status := Error;
          Logger.Error ("Could not parse any answers");
       end if;
    end Parse_Response;
 
-   --  Resolve a domain name
-   procedure Resolve (Domain : String; Result : out DNS_Response) is
-      Request    : constant DNS_Request := Create_Request (Domain);
-      Timeout    : constant Duration    := 5.0;  --  5 second timeout
-      Start_Time : Time;
-      Socket     : Socket_Type;
-      Server     : Sock_Addr_Type;
-      Buffer     : Stream_Element_Array (1 .. 512);
-      Last       : Stream_Element_Offset;
+   procedure Send_With_Timeout (Socket  : Socket_Type;
+                                Request : DNS_Request;
+                                Server  : out Sock_Addr_Type;
+                                Buffer  : out Stream_Element_Array) is
+    Last       : Stream_Element_Offset;
+    Start_Time : constant Time     := Clock;
+    Timeout    : constant Duration := 3.0;
    begin
-      Logger.Info ("Resolving domain: " & Domain);
-
-      --  Create UDP socket
-      Create_Socket (Socket, Family_Inet, Socket_Datagram);
-
-      --  Set socket timeout
-      Set_Socket_Option (Socket, Socket_Level, (Receive_Timeout, Timeout));
-
-      --  Set up server address using Cloudflare
-      Server := Server_Addresses (Cloudflare);
-
-      Logger.Debug ("Sending request to DNS server: " & Image (Server.Addr) & ":" & Server.Port'Image);
-
       --  Send request
       Send_Socket (Socket, Request.Buffer (1 .. Request.Size), Last, Server);
 
       Logger.Debug ("Sent" & Last'Image & " bytes");
-
-      --  Record start time
-      Start_Time := Clock;
 
       --  Try to receive response with timeout
       while Clock - Start_Time < Timeout loop
          begin
             Receive_Socket (Socket, Buffer, Last, Server);
             Logger.Debug ("Received" & Last'Image & " bytes from " & Image (Server.Addr));
-            Parse_Response (Buffer (1 .. Last), Result);
-            Close_Socket (Socket);
             return;
          exception
             when Socket_Error =>
                if Clock - Start_Time >= Timeout then
-                  Close_Socket (Socket);
                   Logger.Error ("DNS request timed out");
                   raise Socket_Error with "DNS request timed out";
                end if;
@@ -266,21 +256,43 @@ package body DNS is
          end;
       end loop;
 
+   end Send_With_Timeout;
+
+   --  Resolve a domain name
+   procedure Resolve (Domain : String; Result : out DNS_Response) is
+      Request    : constant DNS_Request := Create_Request (Domain);
+      Timeout    : constant Duration    := 5.0;  --  5 second timeout
+      Socket     : Socket_Type;
+      Server     : Sock_Addr_Type;
+      Buffer     : Stream_Element_Array (1 .. 512);
+   begin
+      Logger.Info ("Resolving domain: " & Domain);
+
+      --  Create UDP socket
+      Create_Socket (Socket, Family_Inet, Socket_Datagram);
+      Set_Socket_Option (Socket, Socket_Level, (Receive_Timeout, Timeout));
+
+      --  Set up server address using Cloudflare
+      Server := Server_Addresses (Cloudflare);
+
+      Logger.Debug ("Sending request to DNS server: " & Image (Server.Addr) & ":" & Server.Port'Image);
+
+      Send_With_Timeout (Socket, Request, Server, Buffer);
+
+      Parse_Response (Buffer, Result);
+
       Close_Socket (Socket);
-      Result.Status := Response_Error;
-      Result.Count := 0;
-      Logger.Error ("DNS request failed");
    end Resolve;
 
-   --  Legacy function for backward compatibility
-   function Resolve (Domain : String) return String is
-      Response : DNS_Response;
-   begin
-      Resolve (Domain, Response);
-      if Response.Status = Response_Ok and then Response.Count > 0 then
-         return Response.IPs (1);
-      else
-         return "Error resolving domain";
-      end if;
-   end Resolve;
+   -- --  Legacy function for backward compatibility
+   -- function Resolve (Domain : String) return String is
+   --    Response : DNS_Response;
+   -- begin
+   --    Resolve (Domain, Response);
+   --    if Response.Status = Response_Ok and then Response.Count > 0 then
+   --       return Response.IPs (1);
+   --    else
+   --       return "Error resolving domain";
+   --    end if;
+   -- end Resolve;
 end DNS;

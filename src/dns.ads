@@ -10,14 +10,14 @@ package DNS is
    --  Maximum number of IP addresses we'll store
    Max_IPs : constant := 10;
 
-   subtype IP_Count is Natural range 0 .. Max_IPs;
-   type IP_Array is array (1 .. Max_IPs) of String (1 .. 15);
+   subtype IP_Count is Natural range 1 .. Max_IPs;
+   type IP_Array is array (IP_Count) of String (1 .. 15);
 
-   type Response_Status is (Response_Ok, Response_Error);
+   type Response_Status is (Ok, Error);
    --  Integer mapping
    for Response_Status use (
-       Response_Ok => 0,
-       Response_Error => 1
+       Ok => 0,
+       Error => 1
    );
 
    type DNS_Response is record
@@ -42,7 +42,7 @@ package DNS is
    --  Resolve a domain name
    procedure Resolve (Domain : String; Result : out DNS_Response);
 
-   function Resolve (Domain : String) return String;
+   -- function Resolve (Domain : String) return String;
 
 private
    Query_Id : Unsigned_16 := 16#0F#;
