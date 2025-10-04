@@ -1,4 +1,3 @@
-with Ada.Text_IO;
 with Ada.Command_Line;
 with DNS; use DNS;
 with Log_Level;
@@ -10,7 +9,7 @@ procedure Grave is
 begin
    for I in 1 .. Ada.Command_Line.Argument_Count loop
       DNS.Resolve (Ada.Command_Line.Argument (I), Response);
-      if Response.Status = DNS.Response_Ok then
+      if Response.Status = DNS.Ok then
          for J in DNS.IP_Count range 1 .. Response.Count loop
             Logger.Info ("  " & Response.IPs (J));
          end loop;
