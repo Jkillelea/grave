@@ -6,7 +6,7 @@ generic
 package Log is
 
     procedure Debug (Message : String);
-    procedure Info (Message : String);
+    procedure Info  (Message : String);
     procedure Error (Message : String);
 
 private
